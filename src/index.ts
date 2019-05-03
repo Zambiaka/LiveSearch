@@ -1,71 +1,62 @@
 import {fromEvent, of} from 'rxjs';
-import {map, switchMap, debounceTime, catchError} from "rxjs/operators";
+import {ajax} from 'rxjs/internal-compatibility';
+import {catchError, debounceTime, map, switchMap} from 'rxjs/operators';
 
 const API_KEY: string = '12336989-2163ffb915c29e08a1d669169';
 const DEBOUNCE_TIME = 400;
 
+// Types for response
 type hit = {
     previewURL: string,
-    largeImageURL: string
+    largeImageURL: string,
 };
 type searchResult = {
     totalHits: number,
-    hits: hit[]
-}
+    hits: hit[],
+};
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', () => {
     // Elem refs
     const searchInput = document.querySelector('.search');
     const resultsContainer = document.querySelector('.results-container') as HTMLDivElement;
 
+    // Observables
+    const input$ = fromEvent(searchInput as HTMLInputElement, 'input');
+    const values$ = input$.pipe(
+        map((e) => {
+            const event: InputEvent = e as InputEvent;
+            const target: HTMLInputElement = event.target as HTMLInputElement;
+            return target.value ? buildURL(target.value) : '';
+        }),
+    );
 
-    const input$ = fromEvent(searchInput as HTMLInputElement, 'input')
-        .pipe(
-            map(e => {
-                const event: InputEvent = e as InputEvent;
-                const target: HTMLInputElement = event.target as HTMLInputElement;
-
-                return target.value ? buildURL(target.value) : null;
-            })
-        );
-
-    const search$ = input$.pipe(
+    const search$ = values$.pipe(
         debounceTime(DEBOUNCE_TIME),
-        switchMap((value) => {
-            return of(value).pipe(
-                map(val => request(val)),
-                catchError((err) => {
-                    console.log(err);
-                    return of(null);
-                })
-            )
-        })
-    )
-
+        switchMap(request),
+    );
 
     search$.subscribe((data) => {
         clear(resultsContainer);
-        console.log(data);
         if (data) {
-            data.then(res => {
-                if (res.totalHits > 0) {
-                    mountSearchResults(resultsContainer, res);
-                }
-            });
+            mountSearchResults(resultsContainer, data as searchResult);
         }
     });
+
+    function request(url: string) {
+        return ajax.getJSON(url).pipe(
+            catchError((err) => {
+                console.log(err);
+                return of();
+            }),
+        );
+    }
 });
 
-function request(url: string | null) {
-    // throw Error("Error in request")!;
-    return url ? fetch(url as string).then(res => res.json()) : null;
-}
-
 function mountSearchResults(container: HTMLDivElement, results: searchResult): void {
-    results.hits.forEach((hit: hit) => {
-        const image = createImage(hit.previewURL);
+    results.hits.forEach((searchHit: hit) => {
+        const image = createImage(searchHit.previewURL);
         container.appendChild(image);
-    })
+    });
 }
 
 function createImage(url: string) {
